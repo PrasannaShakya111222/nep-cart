@@ -8,11 +8,13 @@ import {
   Mic,
   Moon,
   Sun,
+  User,
 } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { useUserStore } from "../stores/useUserStore";
 import { useCartStore } from "../stores/useCartStore";
 import { useUiStore } from "../stores/useUiStore";
+import { toast } from "react-hot-toast";
 import { useState } from "react";
 
 const Navbar = () => {
@@ -32,40 +34,52 @@ const Navbar = () => {
       window.SpeechRecognition || window.webkitSpeechRecognition;
 
     if (!SpeechRecognition) {
-      alert("Voice search is not supported in this browser");
+      toast.error("Voice search is not supported in this browser");
       return;
     }
 
-    const recognition = new SpeechRecognition();
+    try {
+      const recognition = new SpeechRecognition();
 
-    recognition.lang = "en-US";
-    recognition.continuous = false;
-    recognition.interimResults = false;
+      recognition.lang = "en-US";
+      recognition.continuous = false;
+      recognition.interimResults = false;
 
-    recognition.onstart = () => {
-      console.log("Listening...");
-      setListening(true);
-    };
+      recognition.onstart = () => {
+        setListening(true);
+        toast.loading("Listening... Speak product name 🎙️", { id: "voice-search" });
+      };
 
-    recognition.onresult = (event) => {
-      const voiceText = event.results[0][0].transcript;
+      recognition.onresult = (event) => {
+        const voiceText = event.results[0][0].transcript;
+        setSearchTerm(voiceText);
+        setListening(false);
+        toast.success(`Voice Recognized: "${voiceText}"`, { id: "voice-search" });
+        navigate(`/category/all?search=${encodeURIComponent(voiceText)}`);
+      };
 
-      console.log("Voice:", voiceText);
+      recognition.onerror = (event) => {
+        console.log("Speech error:", event.error);
+        setListening(false);
+        if (event.error === "not-allowed") {
+          toast.error("Microphone access denied. Please allow microphone access.", { id: "voice-search" });
+        } else if (event.error === "no-speech") {
+          toast.error("No speech detected. Please try speaking again.", { id: "voice-search" });
+        } else {
+          toast.error("Voice search error. Please try again.", { id: "voice-search" });
+        }
+      };
 
-      // Put voice text inside search bar
-      setSearchTerm(voiceText);
-    };
+      recognition.onend = () => {
+        setListening(false);
+      };
 
-    recognition.onerror = (event) => {
-      console.log("Speech error:", event.error);
-    };
-
-    recognition.onend = () => {
-      console.log("Stopped listening");
+      recognition.start();
+    } catch (err) {
+      console.log("Error starting speech recognition:", err);
       setListening(false);
-    };
-
-    recognition.start();
+      toast.error("Could not start voice search. Please try again.", { id: "voice-search" });
+    }
   };
 
   return (
@@ -168,8 +182,8 @@ const Navbar = () => {
               {theme === "dark" ? <Sun size={20} /> : <Moon size={20} />}
             </button>
 
-            {/* CART */}
-            {user && (
+            {/* CART - Only shown for non-admin logged in users */}
+            {user && !isAdmin && (
               <Link
                 to="/cart"
                 className="
@@ -197,6 +211,24 @@ const Navbar = () => {
                     {cart.length}
                   </span>
                 )}
+              </Link>
+            )}
+
+            {/* PROFILE LINK */}
+            {user && (
+              <Link
+                to="/profile"
+                className="
+                  flex items-center gap-1.5
+                  text-gray-700 dark:text-gray-200
+                  hover:text-emerald-500 dark:hover:text-emerald-400
+                  bg-gray-100 dark:bg-gray-800
+                  px-3 py-2 rounded-md transition-colors
+                  text-sm font-medium
+                "
+              >
+                <User size={18} className="text-emerald-500" />
+                <span className="hidden sm:inline">{user.name?.split(" ")[0] || "Profile"}</span>
               </Link>
             )}
 

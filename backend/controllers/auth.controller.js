@@ -1,6 +1,11 @@
 import { redis } from "../lib/redis.js";
 import User from "../models/user.model.js";
 import jwt from "jsonwebtoken";
+import { sendVerificationEmail } from "../lib/mail.js";
+
+const generateVerificationCode = () => {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+};
 
 const generateTokens = (userId) => {
   const accessToken = jwt.sign({ userId }, process.env.ACCESS_TOKEN_SECRET, {
@@ -39,10 +44,8 @@ const setCookies = (res, accessToken, refreshToken) => {
 };
 
 export const signup = async (req, res) => {
-  // Destructured the incoming 'phone' payload from req.body
   const { email, phone, password, name } = req.body;
   try {
-    // Enforce checking if a user already exists with either the provided email OR phone
     const userExists = await User.findOne({
       $or: [{ email }, { phone }],
     });
@@ -53,21 +56,25 @@ export const signup = async (req, res) => {
       });
     }
 
-    // Pass the phone data during object creation
-    const user = await User.create({ name, email, phone, password });
+    const verificationCode = generateVerificationCode();
+    const verificationCodeExpiresAt = new Date(Date.now() + 5 * 60 * 1000); // Valid for 5 minutes
 
-    // authenticate
-    const { accessToken, refreshToken } = generateTokens(user._id);
-    await storeRefreshToken(user._id, refreshToken);
+    const user = await User.create({
+      name,
+      email,
+      phone,
+      password,
+      isVerified: false,
+      verificationCode,
+      verificationCodeExpiresAt,
+    });
 
-    setCookies(res, accessToken, refreshToken);
+    await sendVerificationEmail(email, verificationCode);
 
     res.status(201).json({
-      _id: user._id,
-      name: user.name,
+      requiresVerification: true,
       email: user.email,
-      phone: user.phone,
-      role: user.role,
+      message: `Account created! Verification code sent to ${user.email}`,
     });
   } catch (error) {
     console.log("Error in signup controller", error.message);
@@ -77,18 +84,31 @@ export const signup = async (req, res) => {
 
 export const login = async (req, res) => {
   try {
-    // Destructured phone from body payload alongside email
     const { email, phone, password } = req.body;
 
-    // Dynamic Query: Allows logging in with Email OR Phone depending on what was entered
     const user = await User.findOne({
       $or: [
         { email: email || undefined },
-        { phone: phone || email }, // Falls back gracefully if UI component treats identifier interchangeably
+        { phone: phone || email },
       ],
     });
 
     if (user && (await user.comparePassword(password))) {
+      if (!user.isVerified) {
+        const verificationCode = generateVerificationCode();
+        user.verificationCode = verificationCode;
+        user.verificationCodeExpiresAt = new Date(Date.now() + 5 * 60 * 1000); // Valid for 5 minutes
+        await user.save();
+
+        await sendVerificationEmail(user.email, verificationCode);
+
+        return res.status(200).json({
+          requiresVerification: true,
+          email: user.email,
+          message: "Email verification required. Verification code sent to your email.",
+        });
+      }
+
       const { accessToken, refreshToken } = generateTokens(user._id);
       await storeRefreshToken(user._id, refreshToken);
       setCookies(res, accessToken, refreshToken);
@@ -99,12 +119,113 @@ export const login = async (req, res) => {
         email: user.email,
         phone: user.phone,
         role: user.role,
+        isVerified: user.isVerified,
       });
     } else {
       res.status(400).json({ message: "Invalid credentials" });
     }
   } catch (error) {
     console.log("Error in login controller", error.message);
+    res.status(500).json({ message: error.message });
+  }
+};
+
+export const verifyEmail = async (req, res) => {
+  try {
+    const { email, code } = req.body;
+
+    if (!email || !code) {
+      return res.status(400).json({ message: "Email and verification code are required" });
+    }
+
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // Check code expiration (5 minutes validity)
+    if (!user.verificationCodeExpiresAt || new Date() > user.verificationCodeExpiresAt) {
+      return res.status(400).json({ message: "Verification code has expired. Please click resend code." });
+    }
+
+    if (user.verificationCode !== code.trim()) {
+      return res.status(400).json({ message: "Invalid verification code" });
+    }
+
+    user.isVerified = true;
+    user.verificationCode = null;
+    user.verificationCodeExpiresAt = null;
+    await user.save();
+
+    const { accessToken, refreshToken } = generateTokens(user._id);
+    await storeRefreshToken(user._id, refreshToken);
+    setCookies(res, accessToken, refreshToken);
+
+    res.status(200).json({
+      _id: user._id,
+      name: user.name,
+      email: user.email,
+      phone: user.phone,
+      role: user.role,
+      isVerified: true,
+      message: "Email verified successfully!",
+    });
+  } catch (error) {
+    console.log("Error in verifyEmail controller", error.message);
+    res.status(500).json({ message: error.message });
+  }
+};
+
+export const resendVerification = async (req, res) => {
+  try {
+    const { email } = req.body;
+    const user = await User.findOne({ email });
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    const verificationCode = generateVerificationCode();
+    user.verificationCode = verificationCode;
+    user.verificationCodeExpiresAt = new Date(Date.now() + 5 * 60 * 1000); // Valid for 5 minutes
+    await user.save();
+
+    await sendVerificationEmail(email, verificationCode);
+
+    res.json({
+      message: `New verification code sent to ${email}`,
+    });
+  } catch (error) {
+    console.log("Error in resendVerification controller", error.message);
+    res.status(500).json({ message: error.message });
+  }
+};
+
+export const updateProfile = async (req, res) => {
+  try {
+    const { name, phone, email } = req.body;
+    const user = await User.findById(req.user._id);
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    if (name) user.name = name;
+    if (phone) user.phone = phone;
+    if (email) user.email = email;
+
+    const updatedUser = await user.save();
+
+    res.json({
+      _id: updatedUser._id,
+      name: updatedUser.name,
+      email: updatedUser.email,
+      phone: updatedUser.phone,
+      role: updatedUser.role,
+      isVerified: updatedUser.isVerified,
+    });
+  } catch (error) {
+    console.log("Error in updateProfile controller", error.message);
     res.status(500).json({ message: error.message });
   }
 };
@@ -129,7 +250,6 @@ export const logout = async (req, res) => {
   }
 };
 
-// this will refresh the access token
 export const refreshToken = async (req, res) => {
   try {
     const refreshToken = req.cookies.refreshToken;

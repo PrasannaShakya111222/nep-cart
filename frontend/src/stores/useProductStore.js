@@ -15,9 +15,26 @@ export const useProductStore = create((set) => ({
 				products: [...prevState.products, res.data],
 				loading: false,
 			}));
+			toast.success("Product created successfully!");
 		} catch (error) {
-			toast.error(error.response.data.error);
+			toast.error(error.response?.data?.message || error.response?.data?.error || "Failed to create product");
 			set({ loading: false });
+		}
+	},
+	updateProduct: async (productId, productData) => {
+		set({ loading: true });
+		try {
+			const res = await axios.put(`/products/${productId}`, productData);
+			set((prevState) => ({
+				products: prevState.products.map((p) => (p._id === productId ? res.data : p)),
+				loading: false,
+			}));
+			toast.success("Product updated successfully!");
+			return true;
+		} catch (error) {
+			set({ loading: false });
+			toast.error(error.response?.data?.message || error.response?.data?.error || "Failed to update product");
+			return false;
 		}
 	},
 	fetchAllProducts: async () => {
@@ -30,14 +47,15 @@ export const useProductStore = create((set) => ({
 			toast.error(error.response.data.error || "Failed to fetch products");
 		}
 	},
-	fetchProductsByCategory: async (category) => {
+	fetchProductsByCategory: async (category, search = "") => {
 		set({ loading: true });
 		try {
-			const response = await axios.get(`/products/category/${category}`);
+			const queryParam = search ? `?search=${encodeURIComponent(search)}` : "";
+			const response = await axios.get(`/products/category/${category}${queryParam}`);
 			set({ products: response.data.products, loading: false });
 		} catch (error) {
 			set({ error: "Failed to fetch products", loading: false });
-			toast.error(error.response.data.error || "Failed to fetch products");
+			toast.error(error.response?.data?.message || "Failed to fetch products");
 		}
 	},
 	deleteProduct: async (productId) => {

@@ -6,9 +6,14 @@ export const useUserStore = create((set, get) => ({
   user: null,
   loading: false,
   checkingAuth: true,
+  verificationState: {
+    requiresVerification: false,
+    email: "",
+  },
+
+  setVerificationState: (state) => set({ verificationState: state }),
 
   // SIGNUP METHOD
-  // Destructures the updated fields from your SignUpPage component
   signup: async ({ name, email, phone, password, confirmPassword }) => {
     set({ loading: true });
 
@@ -18,15 +23,27 @@ export const useUserStore = create((set, get) => ({
     }
 
     try {
-      // Passes the phone number explicitly to the backend
       const res = await axios.post("/auth/signup", {
         name,
         email,
         phone,
         password,
       });
-      set({ user: res.data, loading: false });
-      toast.success("Account created successfully!");
+
+      set({ loading: false });
+
+      if (res.data.requiresVerification) {
+        set({
+          verificationState: {
+            requiresVerification: true,
+            email: res.data.email,
+          },
+        });
+        toast.success(res.data.message || "Please check your email for the verification code!");
+      } else {
+        set({ user: res.data });
+        toast.success("Account created successfully!");
+      }
     } catch (error) {
       set({ loading: false });
       toast.error(error.response?.data?.message || "An error occurred");
@@ -34,30 +51,84 @@ export const useUserStore = create((set, get) => ({
   },
 
   // LOGIN METHOD
-  // Upgraded to handle both inputs from the upgraded LoginPage form
   login: async (email, phone, password) => {
     set({ loading: true });
 
     try {
-      // Build the payload dynamically so we don't send empty strings to the backend controller
       const payload = {};
       if (email) payload.email = email;
       if (phone) payload.phone = phone;
       payload.password = password;
 
       const res = await axios.post("/auth/login", payload);
-      set({ user: res.data, loading: false });
-      toast.success("Welcome back!");
+      set({ loading: false });
+
+      if (res.data.requiresVerification) {
+        set({
+          verificationState: {
+            requiresVerification: true,
+            email: res.data.email,
+          },
+        });
+        toast.success(res.data.message || "Please check your email for the verification code!");
+      } else {
+        set({ user: res.data });
+        toast.success("Welcome back!");
+      }
     } catch (error) {
       set({ loading: false });
       toast.error(error.response?.data?.message || "An error occurred");
     }
   },
 
+  verifyEmail: async (email, code) => {
+    set({ loading: true });
+    try {
+      const res = await axios.post("/auth/verify-email", { email, code });
+      set({
+        user: res.data,
+        loading: false,
+        verificationState: { requiresVerification: false, email: "" },
+      });
+      toast.success(res.data.message || "Email verified successfully!");
+      return true;
+    } catch (error) {
+      set({ loading: false });
+      toast.error(error.response?.data?.message || "Invalid or expired verification code");
+      return false;
+    }
+  },
+
+  resendVerification: async (email) => {
+    try {
+      const res = await axios.post("/auth/resend-verification", { email });
+      toast.success(res.data.message || "Verification code resent!");
+    } catch (error) {
+      toast.error(error.response?.data?.message || "Failed to resend code");
+    }
+  },
+
+  updateProfile: async (profileData) => {
+    set({ loading: true });
+    try {
+      const res = await axios.put("/auth/profile", profileData);
+      set({ user: res.data, loading: false });
+      toast.success("Profile updated successfully!");
+      return true;
+    } catch (error) {
+      set({ loading: false });
+      toast.error(error.response?.data?.message || "Failed to update profile");
+      return false;
+    }
+  },
+
   logout: async () => {
     try {
       await axios.post("/auth/logout");
-      set({ user: null });
+      set({
+        user: null,
+        verificationState: { requiresVerification: false, email: "", demoCode: "" },
+      });
       toast.success("Logged out successfully");
     } catch (error) {
       toast.error(
@@ -71,14 +142,12 @@ export const useUserStore = create((set, get) => ({
     try {
       const response = await axios.get("/auth/profile");
       set({ user: response.data, checkingAuth: false });
-    } catch (error) {
-      console.log(error.message);
+    } catch {
       set({ checkingAuth: false, user: null });
     }
   },
 
   refreshToken: async () => {
-    // Prevent multiple simultaneous refresh attempts
     if (get().checkingAuth) return;
 
     set({ checkingAuth: true });
@@ -104,20 +173,17 @@ axios.interceptors.response.use(
       originalRequest._retry = true;
 
       try {
-        // If a refresh is already in progress, wait for it to complete
         if (refreshPromise) {
           await refreshPromise;
           return axios(originalRequest);
         }
 
-        // Start a new refresh process
         refreshPromise = useUserStore.getState().refreshToken();
         await refreshPromise;
         refreshPromise = null;
 
         return axios(originalRequest);
       } catch (refreshError) {
-        // If refresh fails, redirect to login or handle as needed
         useUserStore.getState().logout();
         return Promise.reject(refreshError);
       }

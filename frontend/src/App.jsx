@@ -7,6 +7,7 @@ import LoginPage from "./pages/LoginPage";
 import AdminPage from "./pages/AdminPage";
 import CategoryPage from "./pages/CategoryPage";
 import CartPage from "./pages/CartPage";
+import ProfilePage from "./pages/ProfilePage";
 
 import HelpCenterPage from "./footer/HelpCenterPage";
 import TrackOrderPage from "./footer/TrackOrderPage";
@@ -16,6 +17,7 @@ import TermsPage from "./footer/TermsPage";
 
 import Navbar from "./components/Navbar";
 import Footer from "./components/Footer";
+import EmailVerificationModal from "./components/EmailVerificationModal";
 
 import { Toaster } from "react-hot-toast";
 
@@ -45,7 +47,7 @@ function App() {
   }, [checkAuth]);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || user.role === "admin") return;
 
     getCartItems();
   }, [getCartItems, user]);
@@ -115,7 +117,22 @@ function App() {
 
           <Route
             path="/cart"
-            element={user ? <CartPage /> : <Navigate to="/login" />}
+            element={
+              user ? (
+                user.role === "admin" ? (
+                  <Navigate to="/secret-dashboard" />
+                ) : (
+                  <CartPage />
+                )
+              ) : (
+                <Navigate to="/login" />
+              )
+            }
+          />
+
+          <Route
+            path="/profile"
+            element={user ? <ProfilePage /> : <Navigate to="/login" />}
           />
 
           <Route
@@ -142,6 +159,7 @@ function App() {
         <Footer />
       </div>
 
+      <EmailVerificationModal />
       <Toaster />
     </div>
   );

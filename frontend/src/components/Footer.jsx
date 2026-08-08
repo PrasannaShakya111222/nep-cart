@@ -7,6 +7,7 @@ import {
   Truck,
   ShieldCheck,
   Headphones,
+  Loader,
 } from "lucide-react";
 
 import {
@@ -17,11 +18,17 @@ import {
 } from "react-icons/fa6";
 
 import { toast } from "react-hot-toast";
+import { useFeedbackStore } from "../stores/useFeedbackStore";
+import { useUserStore } from "../stores/useUserStore";
 
 const Footer = () => {
   const [feedback, setFeedback] = useState("");
+  const { submitFeedback, loading } = useFeedbackStore();
+  const { user } = useUserStore();
 
-  const handleFeedback = (e) => {
+  const isAdmin = user?.role === "admin";
+
+  const handleFeedback = async (e) => {
     e.preventDefault();
 
     if (!feedback.trim()) {
@@ -29,8 +36,10 @@ const Footer = () => {
       return;
     }
 
-    toast.success("Thank you for your feedback!");
-    setFeedback("");
+    const success = await submitFeedback({ comment: feedback });
+    if (success) {
+      setFeedback("");
+    }
   };
 
   return (
@@ -96,7 +105,7 @@ const Footer = () => {
       </div>
 
       <div className="max-w-7xl mx-auto px-6 py-14">
-        <div className="grid gap-12 lg:grid-cols-5">
+        <div className={`grid gap-12 ${isAdmin ? "lg:grid-cols-4" : "lg:grid-cols-5"}`}>
           {/* BRAND */}
           <div className="lg:col-span-2">
             <h2 className="text-3xl font-bold text-gray-900 dark:text-white">
@@ -236,60 +245,77 @@ const Footer = () => {
             </div>
           </div>
 
-          {/* FEEDBACK */}
+          {/* FEEDBACK - Only rendered for customers and guests */}
 
-          <div>
-            <h3 className="font-semibold mb-5 text-gray-900 dark:text-white">
-              Feedback
-            </h3>
+          {!isAdmin && (
+            <div>
+              <h3 className="font-semibold mb-5 text-gray-900 dark:text-white">
+                Feedback
+              </h3>
 
-            <p className="text-sm text-gray-600 dark:text-slate-400 mb-4">
-              Help us improve NepCart.
-            </p>
+              <p className="text-sm text-gray-600 dark:text-slate-400 mb-4">
+                Help us improve NepCart.
+              </p>
 
-            <form onSubmit={handleFeedback}>
-              <textarea
-                value={feedback}
-                onChange={(e) => setFeedback(e.target.value)}
-                placeholder="Write your feedback..."
-                className="
-                  w-full
-                  h-28
-                  rounded-xl
-                  px-4
-                  py-3
+              <form onSubmit={handleFeedback}>
+                <textarea
+                  value={feedback}
+                  onChange={(e) => setFeedback(e.target.value)}
+                  placeholder="Write your feedback..."
+                  className="
+                    w-full
+                    h-28
+                    rounded-xl
+                    px-4
+                    py-3
 
-                  bg-white
-                  border-gray-300
-                  text-gray-900
+                    bg-white
+                    border-gray-300
+                    text-gray-900
 
-                  dark:bg-slate-900
-                  dark:border-slate-700
-                  dark:text-white
+                    dark:bg-slate-900
+                    dark:border-slate-700
+                    dark:text-white
 
-                  border
-                  outline-none
-                  resize-none
-                  focus:border-emerald-500
-                "
-              />
+                    border
+                    outline-none
+                    resize-none
+                    focus:border-emerald-500
+                  "
+                />
 
-              <button
-                className="
-                  mt-3
-                  w-full
-                  bg-emerald-500
-                  text-black
-                  font-semibold
-                  rounded-xl
-                  py-3
-                  hover:bg-emerald-400
-                "
-              >
-                Send Feedback
-              </button>
-            </form>
-          </div>
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="
+                    mt-3
+                    w-full
+                    bg-emerald-500
+                    text-black
+                    font-semibold
+                    rounded-xl
+                    py-3
+                    hover:bg-emerald-400
+                    disabled:opacity-50
+                    flex
+                    items-center
+                    justify-center
+                    gap-2
+                    transition
+                  "
+                >
+                  {loading ? (
+                    <>
+                      <Loader className="w-5 h-5 animate-spin" />
+                      Sending...
+                    </>
+                  ) : (
+                    "Send Feedback"
+                  )}
+                </button>
+              </form>
+            </div>
+          )}
         </div>
 
         <div
