@@ -12,7 +12,9 @@ REFRESH_TOKEN_SECRET=your_refresh_token_secret
 CLOUDINARY_CLOUD_NAME=your_cloud_name
 CLOUDINARY_API_KEY=your_api_key
 CLOUDINARY_API_SECRET=your_api_secret
-
+EMAIL_USER=your_mail
+EMAIL_PASS=your_pass
+EMAIL_FROM=text<your_mail>
 STRIPE_SECRET_KEY=your_stripe_secret_key
 CLIENT_URL=http://localhost:5173
 NODE_ENV=development
